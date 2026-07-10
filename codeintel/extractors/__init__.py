@@ -34,5 +34,6 @@ _register_optional("dependencies", "codeintel.extractors.dependencies", "Depende
 _register_optional("infra", "codeintel.extractors.infra", "InfraExtractor")
 _register_optional("tests", "codeintel.extractors.tests", "TestsExtractor")
 _register_optional("git-meta", "codeintel.extractors.git_meta", "GitMetaExtractor")
+_register_optional("similarity", "codeintel.extractors.similarity", "SimilarityExtractor")
 
 __all__ = ["REGISTRY", "Extractor", "Facts", "normalize_facts", "write_facts"]

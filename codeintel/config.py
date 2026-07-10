@@ -23,6 +23,7 @@ KNOWN_EXTRACTORS = frozenset(
         "python-api",
         "nextjs",
         "seams",
+        "similarity",
         "dependencies",
         "infra",
         "tests",

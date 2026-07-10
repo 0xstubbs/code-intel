@@ -61,6 +61,7 @@ Each extractor writes `out/<target>/facts/<extractor>.json`:
 | `USES_SERVICE` | File/Component → Service |
 | `READS_ENV` | File → EnvVar |
 | `TESTED_BY` | Function/Class/File → Test |
+| `SIMILAR_TO` | Function → Function (props: score 0-1, method, loc); emitted once per pair with src.id < dst.id |
 
 `git-meta` emits no nodes; it patches props onto existing File nodes: `last_commit_date`, `last_commit_sha`, `commit_count_12mo`.
 

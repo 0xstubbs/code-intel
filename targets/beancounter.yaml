@@ -6,4 +6,4 @@ components:
   - {name: frontend, path: ui/frontend, lang: typescript, framework: nextjs}
   - {name: tools,    path: ampro_tools, lang: python}
   - {name: e2e,      path: ui/e2e,      lang: javascript}
-extractors: [structure, python-api, nextjs, seams, dependencies, infra, tests, git-meta]
+extractors: [structure, python-api, nextjs, seams, dependencies, infra, tests, git-meta, similarity]
