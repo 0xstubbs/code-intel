@@ -1,0 +1,9 @@
+name: beancounter
+root: /home/hermes/beancounter        # absolute; the platform NEVER writes under root
+exclude: [node_modules, .venv, __pycache__, _archive, dogfood-output, extracted, logs, .git]
+components:
+  - {name: backend,  path: ui/backend,  lang: python,     framework: fastapi}
+  - {name: frontend, path: ui/frontend, lang: typescript, framework: nextjs}
+  - {name: tools,    path: ampro_tools, lang: python}
+  - {name: e2e,      path: ui/e2e,      lang: javascript}
+extractors: [structure, python-api, nextjs, seams, dependencies, infra, tests, git-meta]
