@@ -45,6 +45,35 @@ uv run codeintel brief beancounter --about classify_scan_type
 
 Cards include a `FRESHNESS` line from the latest `out/<target>/snapshots/*` file. If the snapshot is older than 24 hours or missing, the card tells you to run `codeintel refresh`.
 
+## Findings
+
+`findings` writes a graph-backed code-health report:
+
+```bash
+uv run codeintel findings beancounter
+```
+
+Outputs:
+
+- `out/<target>/findings/FINDINGS.md`
+- `out/<target>/findings/findings.json`
+
+The JSON file is deterministic and uses this stable item schema:
+
+```json
+{
+  "id": "F0001",
+  "category": "dead-code-candidates",
+  "severity": "info|review|action",
+  "confidence": "high|medium|low",
+  "title": "short finding title",
+  "detail": "why the graph reported it",
+  "evidence": ["path:line [node-id]"]
+}
+```
+
+Implemented categories include dead-code candidates, stale-but-wired files, untested surface, unguarded mutating routes, duplication clusters, production-orphaned modules, and env/config surface. The report is graph-only: dynamic calls, external consumers, registries, templates, and unresolved imports can still require manual review.
+
 ## Sample Queries
 
 What handles a route:
