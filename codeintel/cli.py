@@ -189,6 +189,27 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _resolve_target_arg(value: str) -> str:
+    """Accept a filesystem path in place of a target name (e.g. ~/beancounter).
+
+    A path is mapped to the configured target whose root matches it.
+    """
+    if "/" not in value and not value.startswith("~"):
+        return value
+    root = Path(value).expanduser().resolve()
+    for p in list_targets(TARGETS_DIR):
+        try:
+            t = load_target_by_name(p.stem, TARGETS_DIR)
+        except ConfigError:
+            continue
+        if Path(t.root).resolve() == root:
+            return t.name
+    print(f"error: no configured target has root {root}\n"
+          f"       add targets/<name>.yaml for it (see docs/NEW-TARGET.md)",
+          file=sys.stderr)
+    raise SystemExit(1)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(
@@ -196,6 +217,8 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)s %(name)s: %(message)s",
         stream=sys.stderr,
     )
+    if getattr(args, "target", None):
+        args.target = _resolve_target_arg(args.target)
     return args.fn(args)
 
 

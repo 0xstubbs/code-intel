@@ -4,16 +4,32 @@ codeintel is a uv-managed Python 3.12 code-intelligence platform. It reads confi
 
 Outputs live under `out/<target>/`; target repositories stay read-only.
 
+## Install (system-wide)
+
+```bash
+uv tool install --editable /home/hermes/code-intel
+```
+
+Puts `codeintel` on PATH (`~/.local/bin`), runnable from any directory. Editable: platform
+changes take effect without reinstalling. Targets can be referenced by **name or root path**:
+
+```bash
+codeintel findings ~/beancounter
+codeintel brief ~/beancounter --about classify_scan_type
+```
+
 ## Quickstart
 
 ```bash
-uv sync
-uv run codeintel targets
-uv run codeintel index beancounter
-uv run codeintel query beancounter files-by-component
-uv run codeintel refresh beancounter
-uv run codeintel mcp beancounter
+codeintel targets
+codeintel index beancounter          # or: codeintel index ~/beancounter
+codeintel query beancounter files-by-component
+codeintel refresh beancounter
+codeintel findings beancounter
+codeintel mcp beancounter
 ```
+
+(Inside the repo, `uv run codeintel …` works too and always uses the project venv.)
 
 The query graph uses one `Node` table and one `Edge` relationship table. Contract kinds such as `File`, `Route`, `Dependency`, `CALLS`, and `HANDLED_BY` are stored in the `kind` property.
 
