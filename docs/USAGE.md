@@ -33,6 +33,18 @@ The Kuzu graph has one node table and one relationship table:
 
 Contract kinds are values in `kind`, not Kuzu labels. Use `MATCH (a:Node)-[e:Edge]->(b:Node)` and filter with `a.kind = 'File'`, `e.kind = 'IMPORTS'`, etc. Only `name`, `qname`, `path`, and `line` are promoted to direct columns; other properties are available in the JSON string column `props`.
 
+## Briefs
+
+`brief` prints a compact markdown context card from the graph. It auto-detects whether `--about` is a route, repo-relative file path, symbol name/qname, or component. Ambiguous symbol or substring matches exit `3` and list candidates.
+
+```bash
+uv run codeintel brief beancounter --about "POST /api/v1/batches/{batch_id}/preprocess"
+uv run codeintel brief beancounter --about ui/backend/app/photo_preprocess.py
+uv run codeintel brief beancounter --about classify_scan_type
+```
+
+Cards include a `FRESHNESS` line from the latest `out/<target>/snapshots/*` file. If the snapshot is older than 24 hours or missing, the card tells you to run `codeintel refresh`.
+
 ## Sample Queries
 
 What handles a route:

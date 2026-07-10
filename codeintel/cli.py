@@ -130,7 +130,7 @@ def cmd_stub(args: argparse.Namespace) -> int:
     (each exposing `cli_run(args) -> int`) without editing this file.
     """
     module = {"map": "codeintel.mapgen", "refresh": "codeintel.monitor",
-              "mcp": "codeintel.mcp_server"}.get(args.command)
+              "mcp": "codeintel.mcp_server", "brief": "codeintel.brief"}.get(args.command)
     if module:
         try:
             mod = importlib.import_module(module)
@@ -167,6 +167,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("map", help="generate architecture map + viz (not yet implemented)")
     s.add_argument("target")
+    s.set_defaults(fn=cmd_stub)
+
+    s = sub.add_parser("brief", help="compact graph-backed context card")
+    s.add_argument("target")
+    s.add_argument("--about", required=True,
+                   help="route, file path, symbol qname/name, or component name")
     s.set_defaults(fn=cmd_stub)
 
     s = sub.add_parser("targets", help="list configured targets")

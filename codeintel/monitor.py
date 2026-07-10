@@ -34,6 +34,30 @@ def cli_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def latest_snapshot_info(target: str) -> dict[str, Any] | None:
+    """Return metadata for the newest drift snapshot for a target, if any."""
+    snapshots_dir = OUT_DIR / target / "snapshots"
+    snapshots = sorted(snapshots_dir.glob("*.json"))
+    if not snapshots:
+        return None
+    path = snapshots[-1]
+    timestamp = path.stem
+    try:
+        doc = json.loads(path.read_text())
+        timestamp = str(doc.get("generated_at") or timestamp)
+    except (OSError, json.JSONDecodeError):
+        pass
+    generated = _parse_snapshot_ts(timestamp)
+    age_hours = None
+    if generated is not None:
+        age_hours = max(0.0, (datetime.now(timezone.utc) - generated).total_seconds() / 3600)
+    return {
+        "path": str(path),
+        "timestamp": timestamp,
+        "age_hours": age_hours,
+    }
+
+
 def run_refresh(target: TargetConfig, out: Path) -> dict[str, Any]:
     facts_dir = out / "facts"
     facts_dir.mkdir(parents=True, exist_ok=True)
@@ -288,3 +312,12 @@ def _sha256(path: Path) -> str:
 
 def _utc_ts() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def _parse_snapshot_ts(value: str) -> datetime | None:
+    for fmt in ("%Y%m%dT%H%M%S%fZ", "%Y%m%dT%H%M%SZ"):
+        try:
+            return datetime.strptime(value, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None

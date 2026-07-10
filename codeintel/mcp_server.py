@@ -10,8 +10,10 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from codeintel import OUT_DIR, TARGETS_DIR
+from codeintel.brief import BriefError, render_brief
 from codeintel.config import ConfigError, load_target_by_name
 from codeintel.core.graph import KuzuGraphStore
+from codeintel.monitor import latest_snapshot_info
 from codeintel.queries import CANNED, QueryError
 
 WRITE_WORDS = re.compile(r"\b(CREATE|MERGE|SET|DELETE|DETACH|DROP|COPY|LOAD|ALTER|INSTALL|CALL)\b", re.I)
@@ -65,9 +67,26 @@ def build_server(target_name: str, db_path) -> FastMCP:
         return _with_store(db_path, lambda store: store.query(cypher))
 
     @mcp.tool()
+    def list_canned() -> list[str]:
+        """List available canned query names."""
+        return sorted(CANNED)
+
+    @mcp.tool()
+    def brief(target: str, about: str) -> str:
+        """Return the same compact markdown context card as `codeintel brief`."""
+        if target != target_name:
+            raise ValueError(f"this MCP server is for target '{target_name}', not '{target}'")
+        try:
+            return render_brief(target_name, db_path, about)
+        except BriefError as e:
+            raise ValueError(str(e)) from e
+
+    @mcp.tool()
     def stats() -> dict[str, Any]:
-        """Return node and edge counts by kind."""
-        return _with_store(db_path, lambda store: store.stats())
+        """Return node and edge counts by kind, plus snapshot freshness."""
+        graph_stats = _with_store(db_path, lambda store: store.stats())
+        graph_stats["freshness"] = _freshness(target_name)
+        return graph_stats
 
     @mcp.tool()
     def describe_schema() -> dict[str, Any]:
@@ -78,6 +97,7 @@ def build_server(target_name: str, db_path) -> FastMCP:
             "edge_kinds": sorted(graph_stats["edges"]),
             "canned_queries": sorted(CANNED),
             "dialect_notes": SCHEMA_NOTES,
+            "freshness": _freshness(target_name),
         }
 
     return mcp
@@ -99,3 +119,24 @@ def _guard_read_only(cypher: str) -> None:
         raise ValueError("multiple statements are not allowed")
     if WRITE_WORDS.search(stripped):
         raise ValueError("only read-only MATCH/RETURN style queries are allowed")
+
+
+def _freshness(target_name: str) -> dict[str, Any]:
+    info = latest_snapshot_info(target_name)
+    if info is None:
+        return {
+            "snapshot_path": None,
+            "snapshot_timestamp": None,
+            "age_hours": None,
+            "stale": True,
+            "hint": "run codeintel refresh",
+        }
+    age = info.get("age_hours")
+    stale = age is None or age > 24
+    return {
+        "snapshot_path": info["path"],
+        "snapshot_timestamp": info["timestamp"],
+        "age_hours": None if age is None else round(float(age), 2),
+        "stale": stale,
+        "hint": "run codeintel refresh" if stale else None,
+    }
