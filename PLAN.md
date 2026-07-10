@@ -1,6 +1,6 @@
 # Code-Intelligence Platform — v1.0 Implementation Plan
 
-*Status: awaiting approval. Research basis: `research/landscape.md`, `research/beancounter-inventory.md`.*
+*Status: **v1.0 shipped 2026-07-10** — all Definition-of-done items verified (see README + docs/). One deviation from §1: the W1 bake-off eliminated CodeGraphContext (its indexer crashed on this target: `_resolve_decorator_path` on imported decorators), so the structural core is our own tree-sitter extractor behind the same adapter seam — an adopted core can still replace it, it's just another producer of the same facts. Research basis: `research/landscape.md`, `research/beancounter-inventory.md`.*
 
 ## 1. Recommendation: **Hybrid** — adopt a graph-indexer core, build a thin platform around it
 
