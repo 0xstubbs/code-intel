@@ -1,0 +1,7 @@
+name: eat-tools
+root: /home/hermes/eat_tools
+exclude: [.git, .venv, __pycache__, .pytest_cache, dist, build, node_modules]
+components:
+  - {name: tools, path: ., lang: mixed}
+  - {name: job-posting-parser, path: backup/job_posting_parser, lang: python}
+extractors: [structure, dependencies, infra, tests, git-meta]

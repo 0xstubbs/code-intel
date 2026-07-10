@@ -1,0 +1,7 @@
+name: toy
+root: /home/hermes/code-intel/tests/fixtures/toy-target
+exclude: [.git, .venv, __pycache__, .pytest_cache]
+components:
+  - {name: app, path: src/toy_app, lang: python}
+  - {name: tests, path: tests, lang: python}
+extractors: [structure, dependencies, infra, tests, git-meta]

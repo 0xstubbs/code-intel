@@ -152,8 +152,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("target")
     s.set_defaults(fn=cmd_index)
 
-    s = sub.add_parser("refresh", help="re-extract + drift report (not yet implemented)")
+    s = sub.add_parser("refresh", help="re-extract + drift report")
     s.add_argument("target")
+    s.add_argument("--check", action="store_true",
+                   help="exit 1 if drift detected (CI mode)")
     s.set_defaults(fn=cmd_stub)
 
     s = sub.add_parser("query", help="canned or raw Cypher query against the graph")
