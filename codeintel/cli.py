@@ -6,6 +6,7 @@ Subcommands: index, refresh (stub), query, map (stub), targets, mcp (stub).
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import logging
 import sys
@@ -123,6 +124,20 @@ def cmd_targets(args: argparse.Namespace) -> int:
 
 
 def cmd_stub(args: argparse.Namespace) -> int:
+    """Dispatch to a feature module if it has landed; stub otherwise.
+
+    Workers add codeintel/mapgen.py, codeintel/monitor.py, codeintel/mcp_server.py
+    (each exposing `cli_run(args) -> int`) without editing this file.
+    """
+    module = {"map": "codeintel.mapgen", "refresh": "codeintel.monitor",
+              "mcp": "codeintel.mcp_server"}.get(args.command)
+    if module:
+        try:
+            mod = importlib.import_module(module)
+        except ImportError:
+            mod = None
+        if mod is not None:
+            return mod.cli_run(args)
     print(f"codeintel {args.command}: not yet implemented", file=sys.stderr)
     return 2
 
