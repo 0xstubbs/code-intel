@@ -1,6 +1,6 @@
 """codeintel CLI (argparse — deps kept lean per CONTRACTS.md).
 
-Subcommands: index, refresh (stub), query, map (stub), targets, mcp (stub).
+Subcommands: index, refresh, query, map, brief, findings, wiki, targets, mcp (stub).
 """
 
 from __future__ import annotations
@@ -131,7 +131,7 @@ def cmd_stub(args: argparse.Namespace) -> int:
     """
     module = {"map": "codeintel.mapgen", "refresh": "codeintel.monitor",
               "mcp": "codeintel.mcp_server", "brief": "codeintel.brief",
-              "findings": "codeintel.findings"}.get(args.command)
+              "findings": "codeintel.findings", "wiki": "codeintel.wiki"}.get(args.command)
     if module:
         try:
             mod = importlib.import_module(module)
@@ -178,6 +178,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("findings", help="write graph-backed code-health findings")
     s.add_argument("target")
+    s.set_defaults(fn=cmd_stub)
+
+    s = sub.add_parser("wiki", help="write graph-grounded narrative wiki")
+    s.add_argument("target")
+    s.add_argument("--model", help="OpenRouter model (default: CODEINTEL_WIKI_MODEL or google/gemini-3.5-flash)")
+    s.add_argument("--force", action="store_true", help="regenerate selected page(s) even if context hash is unchanged")
+    s.add_argument("--page", help="only process one page, e.g. index.md, architecture.md, backend.md")
     s.set_defaults(fn=cmd_stub)
 
     s = sub.add_parser("targets", help="list configured targets")

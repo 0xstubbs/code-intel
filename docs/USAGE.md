@@ -74,6 +74,31 @@ The JSON file is deterministic and uses this stable item schema:
 
 Implemented categories include dead-code candidates, stale-but-wired files, untested surface, unguarded mutating routes, duplication clusters, production-orphaned modules, and env/config surface. The report is graph-only: dynamic calls, external consumers, registries, templates, and unresolved imports can still require manual review.
 
+## Wiki
+
+`wiki` writes a graph-grounded narrative wiki under `out/<target>/wiki/`:
+
+```bash
+uv run codeintel wiki beancounter
+uv run codeintel wiki beancounter --page backend.md --force
+```
+
+It uses OpenRouter. Set `OPENROUTER_API_KEY` (or `OPEN_ROUTER_API_KEY`) in the environment or in `/home/hermes/.env`; the default model is `google/gemini-3.5-flash`, overridable with `CODEINTEL_WIKI_MODEL` or `--model`.
+
+Pages are assembled from context packs built only from codeintel facts, graph edges, snapshots, and findings. Target source code is not sent to the model. The generated pages are:
+
+- `index.md`
+- `architecture.md`
+- one `<component>.md` page per configured component
+- `seams.md`
+- `getting-started.md`
+
+`architecture.md` includes a Mermaid component/seams diagram generated deterministically in Python from graph edges; the model writes only prose around it.
+
+Regeneration is drift-aware. `out/<target>/wiki/.state.json` maps each page to the SHA-256 of its context pack, model, and graph snapshot timestamp. Re-running skips unchanged pages with `up to date`; `--force` regenerates all selected pages. `--page <file>` narrows work to one page.
+
+Honesty boundary: `wiki/*.md` prose is LLM output and is not covered by the byte-determinism guarantee. The `.state.json` input hashes are deterministic for a fixed graph/facts snapshot.
+
 ## Sample Queries
 
 What handles a route:
