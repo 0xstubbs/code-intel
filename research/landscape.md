@@ -69,6 +69,10 @@ The hermes/Firecrawl crawl (completed 2026-07-09 20:40) largely corroborates the
 
 Hermes additionally surfaced `roam-code`, `codeseek`, and `code-graph-rag` (Memgraph) — noted in its wiki; none displace the finalists.
 
+## Addendum (2026-07-10): hermes `code-wiki` optional skill
+
+Missed in the original sweep (we researched external tools but not the hermes skills catalog). Evaluated post-v1: an LLM-driven **narrative wiki generator** (prose docs + Mermaid diagrams, 8–10 module cap, output to `~/.hermes/wikis/`) using plain file tools — no extraction, graph, queries, or freshness machinery. Doesn't change the build decision (different layer; couldn't answer reachability/seam/findings questions), but is a natural **complement**: a future `codeintel wiki` could feed graph facts (briefs, seams, findings, drift) to an LLM for narrative pages, making them cheaper, grounded, and selectively regenerable on drift. https://hermes-agent.nousresearch.com/docs/user-guide/skills/optional/software-development/software-development-code-wiki
+
 ## Sources
 - https://github.com/CodeGraphContext/CodeGraphContext · https://codegraphcontext.github.io/ · https://pypi.org/project/codegraphcontext/
 - https://github.com/tirth8205/code-review-graph · https://chatforest.com/reviews/code-intelligence-codebase-graph-mcp-servers/
