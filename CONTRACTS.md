@@ -29,7 +29,7 @@ Loader: `codeintel/config.py` → `TargetConfig` / `Component` dataclasses. Unkn
 ## Facts (extractor output — the interchange format)
 Each extractor writes `out/<target>/facts/<extractor>.json`:
 ```json
-{"extractor": "python-api", "version": 1, "generated_at": "…", "target": "beancounter",
+{"extractor": "python-api", "version": 1, "target": "beancounter",
  "nodes": [{"id": "…", "kind": "Route", "props": {…}}],
  "edges": [{"src": "…", "dst": "…", "kind": "HANDLED_BY", "props": {…}}]}
 ```
