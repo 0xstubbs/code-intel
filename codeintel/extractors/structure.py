@@ -23,6 +23,8 @@ component usage (<Foo/> => CALLS to the component function).
 
 from __future__ import annotations
 
+import ast
+import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -94,10 +96,11 @@ class Imp:
 @dataclass
 class Call:
     caller_qname: str      # enclosing function qname
-    kind: str              # "name" | "self" | "mod"
+    kind: str              # "name" | "self" | "mod" | "jsx"
     obj: str | None        # receiver identifier for kind == "mod"
     callee: str
     line: int
+    args: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -109,6 +112,7 @@ class FileInfo:
     classes: list[ClassDef] = field(default_factory=list)
     imports: list[Imp] = field(default_factory=list)
     calls: list[Call] = field(default_factory=list)
+    constants: dict[str, str] = field(default_factory=dict)
 
     def top_level_fn(self, name: str) -> FnDef | None:
         for f in self.functions:
@@ -119,6 +123,12 @@ class FileInfo:
     def any_fn(self, name: str) -> FnDef | None:
         for f in self.functions:
             if f.name == name and f.class_name is None:
+                return f
+        return None
+
+    def fn_qname(self, qname: str) -> FnDef | None:
+        for f in self.functions:
+            if f.qname == qname:
                 return f
         return None
 
@@ -143,6 +153,108 @@ def _text(node: Node | None) -> str:
 
 def _line(node: Node) -> int:
     return node.start_point[0] + 1
+
+
+# ── python stdlib AST walk ──────────────────────────────────────────────────
+
+
+def _py_expr_name(node: ast.AST | None) -> str:
+    if node is None:
+        return ""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _py_expr_name(node.value)
+        return f"{base}.{node.attr}" if base else node.attr
+    if isinstance(node, ast.Call):
+        return _py_expr_name(node.func)
+    if isinstance(node, ast.Subscript):
+        return _py_expr_name(node.value)
+    return ""
+
+
+class _PythonAstCollector(ast.NodeVisitor):
+    def __init__(self, info: FileInfo) -> None:
+        self.info = info
+        self.class_stack: list[str] = []
+        self.fn_stack: list[str] = []
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        qname = ".".join([*self.class_stack, node.name])
+        bases = [name.split(".")[-1] for name in (_py_expr_name(b) for b in node.bases) if name]
+        self.info.classes.append(ClassDef(node.name, qname, node.lineno, bases))
+        self.class_stack.append(node.name)
+        for stmt in node.body:
+            self.visit(stmt)
+        self.class_stack.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function(node)
+
+    def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        qname = ".".join([*self.class_stack, *self.fn_stack, node.name])
+        self.info.functions.append(
+            FnDef(node.name, qname, node.lineno, self.class_stack[-1] if self.class_stack else None)
+        )
+        self.fn_stack.append(node.name)
+        for stmt in node.body:
+            self.visit(stmt)
+        self.fn_stack.pop()
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            local = alias.asname or alias.name.split(".")[0]
+            self.info.imports.append(Imp(alias.name, 0, None, local, node.lineno))
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        module = node.module or ""
+        for alias in node.names:
+            if alias.name == "*":
+                self.info.imports.append(Imp(module, node.level, "*", None, node.lineno))
+                continue
+            self.info.imports.append(
+                Imp(module, node.level, alias.name, alias.asname or alias.name, node.lineno)
+            )
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        self._maybe_constant(node.targets, node.value)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        self._maybe_constant([node.target], node.value)
+        self.generic_visit(node)
+
+    def _maybe_constant(self, targets: list[ast.AST], value: ast.AST | None) -> None:
+        if self.class_stack or self.fn_stack:
+            return
+        if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+            return
+        for target in targets:
+            if isinstance(target, ast.Name):
+                self.info.constants[target.id] = value.value
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if self.fn_stack:
+            caller = ".".join([*self.class_stack, *self.fn_stack])
+            fn = node.func
+            args = [_py_expr_name(arg) for arg in node.args]
+            if isinstance(fn, ast.Name):
+                self.info.calls.append(Call(caller, "name", None, fn.id, node.lineno, args))
+            elif isinstance(fn, ast.Attribute):
+                if isinstance(fn.value, ast.Name):
+                    if fn.value.id == "self":
+                        self.info.calls.append(Call(caller, "self", None, fn.attr, node.lineno, args))
+                    else:
+                        self.info.calls.append(Call(caller, "mod", fn.value.id, fn.attr, node.lineno, args))
+        self.generic_visit(node)
+
+
+def _parse_python_ast(data: bytes, info: FileInfo) -> None:
+    tree = ast.parse(data.decode("utf-8", errors="replace"), filename=info.relpath)
+    _PythonAstCollector(info).visit(tree)
 
 
 # ── python AST walk ─────────────────────────────────────────────────────────
@@ -335,7 +447,7 @@ def _walk_ts(node: Node, info: FileInfo, class_stack: list[str], fn_stack: list[
                 name = _text(name_node)
                 if name[:1].isupper():  # component usage, not <div>
                     caller = ".".join([*class_stack, *fn_stack]) if class_stack else ".".join(fn_stack)
-                    info.calls.append(Call(caller, "name", None, name, _line(child)))
+                    info.calls.append(Call(caller, "jsx", None, name, _line(child)))
             _walk_ts(child, info, class_stack, fn_stack)
         else:
             _walk_ts(child, info, class_stack, fn_stack)
@@ -378,13 +490,7 @@ def _resolve_py_module(relpath: str, module: str, level: int,
     return None
 
 
-def _resolve_ts_spec(relpath: str, spec: str, comp: Component, fileset: set[str]) -> str | None:
-    if spec.startswith("."):
-        base = PurePosixPath(relpath).parent / spec
-    elif spec.startswith("@/"):
-        base = PurePosixPath(comp.path) / spec[2:]
-    else:
-        return None
+def _candidate_ts_file(base: PurePosixPath | str, fileset: set[str]) -> str | None:
     # normalize ../ segments
     norm: list[str] = []
     for part in str(base).split("/"):
@@ -404,6 +510,55 @@ def _resolve_ts_spec(relpath: str, spec: str, comp: Component, fileset: set[str]
         if idx in fileset:
             return idx
     return None
+
+
+def _load_ts_aliases(target: TargetConfig, comp: Component) -> list[tuple[str, str, str]]:
+    """Return tsconfig paths as (prefix, suffix, target_pattern)."""
+    cfg_path = target.component_root(comp) / "tsconfig.json"
+    try:
+        doc = json.loads(cfg_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    paths = doc.get("compilerOptions", {}).get("paths", {})
+    aliases: list[tuple[str, str, str]] = []
+    if not isinstance(paths, dict):
+        return aliases
+    for pattern, targets in paths.items():
+        if not isinstance(pattern, str) or not isinstance(targets, list) or not targets:
+            continue
+        target_pattern = next((t for t in targets if isinstance(t, str)), None)
+        if target_pattern is None:
+            continue
+        if "*" in pattern:
+            prefix, suffix = pattern.split("*", 1)
+        else:
+            prefix, suffix = pattern, ""
+        aliases.append((prefix, suffix, target_pattern))
+    return sorted(aliases, key=lambda a: (-len(a[0]), a[1], a[2]))
+
+
+def _resolve_ts_spec(relpath: str, spec: str, comp: Component, fileset: set[str],
+                     aliases: list[tuple[str, str, str]] | None = None) -> str | None:
+    if spec.startswith("."):
+        base = PurePosixPath(relpath).parent / spec
+    else:
+        for prefix, suffix, target_pattern in aliases or []:
+            if not spec.startswith(prefix) or (suffix and not spec.endswith(suffix)):
+                continue
+            middle_end = len(spec) - len(suffix) if suffix else len(spec)
+            middle = spec[len(prefix):middle_end]
+            mapped = target_pattern.replace("*", middle)
+            if mapped.startswith("./"):
+                base = PurePosixPath(comp.path) / mapped[2:]
+            elif mapped.startswith("../"):
+                base = PurePosixPath(comp.path) / mapped
+            else:
+                base = PurePosixPath(comp.path) / mapped
+            found = _candidate_ts_file(base, fileset)
+            if found is not None:
+                return found
+        return None
+    return _candidate_ts_file(base, fileset)
 
 
 # ── the extractor ───────────────────────────────────────────────────────────
@@ -441,11 +596,15 @@ class StructureExtractor:
                 log.warning("cannot read %s: %s", relpath, e)
                 continue
             info = FileInfo(relpath=relpath, component=comp.name, lang=lang)
-            tree = parsers[lang].parse(data)
-            if lang == "python":
-                _walk_python(tree.root_node, info, [], [])
-            else:
-                _walk_ts(tree.root_node, info, [], [])
+            try:
+                if lang == "python":
+                    _parse_python_ast(data, info)
+                else:
+                    tree = parsers[lang].parse(data)
+                    _walk_ts(tree.root_node, info, [], [])
+            except Exception as e:  # noqa: BLE001 - one bad file must not abort indexing
+                log.warning("cannot parse %s: %s", relpath, e)
+                continue
             infos[relpath] = info
 
         fileset = set(infos)
@@ -518,6 +677,10 @@ class StructureExtractor:
                          ) -> dict[str, dict[str, Binding]]:
         fileset = set(infos)
         bindings: dict[str, dict[str, Binding]] = {}
+        ts_aliases = {
+            comp.name: _load_ts_aliases(target, comp)
+            for comp in {files[r].name: files[r] for r in files}.values()
+        }
         for relpath, info in infos.items():
             comp = files[relpath]
             fid = f"file:{relpath}"
@@ -559,7 +722,9 @@ class StructureExtractor:
                             if imp.alias and imp.symbol != "*":
                                 fb[imp.alias] = Binding("module", None, imp.symbol, display)
                 else:  # TS / TSX / JS
-                    resolved = _resolve_ts_spec(relpath, imp.module, comp, fileset)
+                    resolved = _resolve_ts_spec(
+                        relpath, imp.module, comp, fileset, ts_aliases.get(comp.name, [])
+                    )
                     if resolved:
                         facts.add_edge(fid, f"file:{resolved}", "IMPORTS")
                         if imp.alias:
@@ -579,50 +744,130 @@ class StructureExtractor:
             fb = bindings.get(relpath, {})
             for call in info.calls:
                 src = f"fn:{relpath}::{call.caller_qname}"
-                dst = self._resolve_call_target(info, infos, fb, call)
-                if dst is not None:
-                    facts.add_edge(src, dst, "CALLS", line=call.line)
+                resolved = self._resolve_call_target(info, infos, fb, call)
+                if resolved is not None:
+                    dst, how = resolved
+                    facts.add_edge(src, dst, "CALLS", line=call.line, resolved=how)
+                for dst in self._resolve_python_job_dispatch(info, infos, fb, call):
+                    facts.add_edge(src, dst, "CALLS", line=call.line, resolved="import")
+                for dst, how in self._resolve_python_callback_args(info, infos, fb, call):
+                    facts.add_edge(src, dst, "CALLS", line=call.line, resolved=how)
+
+    def _resolve_python_job_dispatch(self, info: FileInfo, infos: dict[str, FileInfo],
+                                     fb: dict[str, Binding], call: Call) -> list[str]:
+        if info.lang != "python" or call.kind != "mod" or call.obj is None:
+            return []
+        if call.callee not in {"enqueue_job", "enqueue"}:
+            return []
+        b = fb.get(call.obj)
+        if b is None or b.kind != "file" or b.relpath not in infos:
+            return []
+        rinfo = infos[b.relpath]
+        out: list[str] = []
+        for arg in call.args:
+            if not arg.startswith(f"{call.obj}."):
+                continue
+            const_name = arg.split(".")[-1]
+            job_type = rinfo.constants.get(const_name)
+            if not job_type:
+                continue
+            handler_names = [f"run_{job_type}_job"]
+            if job_type.endswith("_batch"):
+                handler_names.append(f"run_{job_type[:-6]}_job")
+            fn = next((rinfo.top_level_fn(name) for name in handler_names
+                       if rinfo.top_level_fn(name) is not None), None)
+            if fn is not None:
+                out.append(f"fn:{b.relpath}::{fn.qname}")
+        return sorted(set(out))
+
+    def _resolve_python_callback_args(self, info: FileInfo, infos: dict[str, FileInfo],
+                                      fb: dict[str, Binding],
+                                      call: Call) -> list[tuple[str, str]]:
+        if info.lang != "python":
+            return []
+        callback_positions: tuple[int, ...]
+        if call.callee == "to_thread":
+            callback_positions = (0,)
+        elif call.callee == "run_in_executor":
+            callback_positions = (1,)
+        else:
+            return []
+        out: list[tuple[str, str]] = []
+        for pos in callback_positions:
+            if pos >= len(call.args):
+                continue
+            arg = call.args[pos]
+            if not arg or "." in arg:
+                continue
+            resolved = self._resolve_call_target(
+                info, infos, fb, Call(call.caller_qname, "name", None, arg, call.line)
+            )
+            if resolved is not None:
+                out.append(resolved)
+        return sorted(set(out))
 
     def _resolve_call_target(self, info: FileInfo, infos: dict[str, FileInfo],
-                             fb: dict[str, Binding], call: Call) -> str | None:
-        if call.kind == "name":
+                             fb: dict[str, Binding], call: Call) -> tuple[str, str] | None:
+        if call.kind in ("name", "jsx"):
+            how = "jsx" if call.kind == "jsx" else "local"
             local = info.any_fn(call.callee)
             if local is not None:
-                return f"fn:{info.relpath}::{local.qname}"
+                return f"fn:{info.relpath}::{local.qname}", how
+            local_cls = info.cls(call.callee)
+            if local_cls is not None:
+                init = info.method(local_cls.name, "__init__")
+                if init is not None:
+                    return f"fn:{info.relpath}::{init.qname}", "local"
             b = fb.get(call.callee)
             if b is not None and b.kind == "file" and b.relpath in infos:
                 rinfo = infos[b.relpath]
                 sym = b.symbol or call.callee
-                if sym == "default":  # `import Foo from './x'` — match by local name
-                    sym = call.callee
-                fn = rinfo.top_level_fn(sym)
+                if sym == "default":
+                    # TS default import: prefer the local binding name, then the only
+                    # plausible component export in that file.
+                    fn = rinfo.top_level_fn(call.callee)
+                    if fn is None:
+                        exported = [f for f in rinfo.functions if f.class_name is None]
+                        fn = exported[0] if len(exported) == 1 else None
+                else:
+                    fn = rinfo.top_level_fn(sym)
                 if fn is not None:
-                    return f"fn:{b.relpath}::{fn.qname}"
+                    return f"fn:{b.relpath}::{fn.qname}", ("jsx" if call.kind == "jsx" else "import")
+                cls = rinfo.cls(sym)
+                if cls is not None:
+                    init = rinfo.method(cls.name, "__init__")
+                    if init is not None:
+                        return f"fn:{b.relpath}::{init.qname}", "import"
         elif call.kind == "self":
             # innermost class owning the caller
-            cls = call.caller_qname.rsplit(".", 2)[0] if "." in call.caller_qname else None
-            if cls:
-                m = info.method(cls.split(".")[-1], call.callee)
+            caller = info.fn_qname(call.caller_qname)
+            if caller is not None and caller.class_name:
+                m = info.method(caller.class_name, call.callee)
                 if m is not None:
-                    return f"fn:{info.relpath}::{m.qname}"
+                    return f"fn:{info.relpath}::{m.qname}", "self"
         elif call.kind == "mod" and call.obj is not None:
             # Class.method() on a local class
             local_cls = info.cls(call.obj)
             if local_cls is not None:
                 m = info.method(call.obj, call.callee)
                 if m is not None:
-                    return f"fn:{info.relpath}::{m.qname}"
+                    return f"fn:{info.relpath}::{m.qname}", "local"
             b = fb.get(call.obj)
             if b is not None and b.kind == "file" and b.relpath in infos:
                 rinfo = infos[b.relpath]
                 if b.symbol is None:  # module import: m.f()
                     fn = rinfo.top_level_fn(call.callee)
                     if fn is not None:
-                        return f"fn:{b.relpath}::{fn.qname}"
+                        return f"fn:{b.relpath}::{fn.qname}", "import"
+                    cls = rinfo.cls(call.callee)
+                    if cls is not None:
+                        init = rinfo.method(cls.name, "__init__")
+                        if init is not None:
+                            return f"fn:{b.relpath}::{init.qname}", "import"
                 else:  # imported class: Class.method()
                     m = rinfo.method(b.symbol, call.callee)
                     if m is not None:
-                        return f"fn:{b.relpath}::{m.qname}"
+                        return f"fn:{b.relpath}::{m.qname}", "import"
         return None
 
     def _resolve_inheritance(self, infos: dict[str, FileInfo],
