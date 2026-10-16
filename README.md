@@ -33,6 +33,30 @@ codeintel mcp beancounter
 
 The query graph uses one `Node` table and one `Edge` relationship table. Contract kinds such as `File`, `Route`, `Dependency`, `CALLS`, and `HANDLED_BY` are stored in the `kind` property.
 
+## Maintained project documentation
+
+Before development or independent review, read this README for the project
+workflow, [PLAN.md](PLAN.md) for requirements and design decisions,
+[CONTRACTS.md](CONTRACTS.md) for shared interfaces and invariants, and the affected
+[usage](docs/USAGE.md), [extension](docs/EXTENDING.md) or [schema](docs/SCHEMA.md) guide.
+These existing documents are the maintained repository documentation; an issue
+tracks work and links the relevant documents rather than replacing them.
+
+Update affected workflows, requirements, contracts and design decisions in the
+same change as the behavior they describe. Record a changed decision and its
+reason in the existing plan or affected contract, preserving dated evidence and
+explicitly separating proposed, implemented and exercised behavior. Independent
+review checks that documentation matches the exact change and retains intended
+behavior that has not shipped. Reuse these documents instead of adding another
+specification or task backlog.
+
+Historical shipped labels, paths and command examples require confirmation
+against the selected source/runtime before use. Recovered local branches, draft
+designs, indexes and qualification receipts remain separate evidence until they
+are explicitly reviewed and integrated. Publishing these instructions does not
+install a runtime, connect MCP, refresh a graph or establish that a loader has
+included the complete text in an existing session.
+
 ## Docs
 
 - [Usage](docs/USAGE.md): install, index, refresh, and validated Cypher examples.
